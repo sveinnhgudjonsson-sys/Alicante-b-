@@ -15,21 +15,69 @@ const LEGEND_LABELS: Label[] = ['svenni_inga', 'freyr_soley', 'saman', 'adrir_ge
 
 interface Props {
   bookings: Booking[]
-  onDayClick: (iso: string) => void
+  onRangeSelect: (start: string, end: string) => void
   onBookingClick: (b: Booking) => void
 }
 
-export default function Calendar({ bookings, onDayClick, onBookingClick }: Props) {
+export default function Calendar({ bookings, onRangeSelect, onBookingClick }: Props) {
   const [base, setBase] = useState(() => {
     const d = new Date()
     d.setDate(1)
     return d
   })
 
+  // Two-tap selection state (shared across both month grids)
+  const [selStart, setSelStart] = useState<string | null>(null)
+  const [hovered,  setHovered]  = useState<string | null>(null)
+
   const months = [base, addMonths(base, 1)]
 
+  function handleDayClick(iso: string, isCovered: boolean, booking?: Booking) {
+    if (isCovered && booking) {
+      // Clicking a booked day → edit that booking, cancel any selection
+      setSelStart(null)
+      setHovered(null)
+      onBookingClick(booking)
+      return
+    }
+
+    if (!selStart) {
+      // First tap — set start
+      setSelStart(iso)
+      setHovered(iso)
+    } else {
+      // Second tap — confirm range
+      const a = selStart < iso ? selStart : iso
+      const b = selStart < iso ? iso      : selStart
+      if (a === b) {
+        // Tapped same day twice — reset
+        setSelStart(null)
+        setHovered(null)
+        return
+      }
+      setSelStart(null)
+      setHovered(null)
+      // end date is the checkout day — add 1 day so the last clicked night is included
+      const endDate = new Date(b)
+      endDate.setDate(endDate.getDate() + 1)
+      onRangeSelect(a, toISO(endDate))
+    }
+  }
+
+  function handleDayHover(iso: string) {
+    if (selStart) setHovered(iso)
+  }
+
+  function handleMouseLeave() {
+    if (selStart) setHovered(selStart)
+  }
+
+  // Compute the visual preview range
+  const previewStart = selStart && hovered ? (selStart < hovered ? selStart : hovered) : null
+  const previewEnd   = selStart && hovered ? (selStart < hovered ? hovered  : selStart) : null
+
   return (
-    <div>
+    <div onMouseLeave={handleMouseLeave}>
       {/* Navigation */}
       <div className="flex items-center justify-between px-4 pt-3 pb-2">
         <button
@@ -40,7 +88,10 @@ export default function Calendar({ bookings, onDayClick, onBookingClick }: Props
           ‹
         </button>
         <span className="text-sm text-gray-500">
-          {MONTH_IS[months[0].getMonth()]} – {MONTH_IS[months[1].getMonth()]} {months[1].getFullYear()}
+          {selStart
+            ? <span className="text-blue-600 font-medium">Veldu síðasta dag…</span>
+            : <>{MONTH_IS[months[0].getMonth()]} – {MONTH_IS[months[1].getMonth()]} {months[1].getFullYear()}</>
+          }
         </span>
         <button
           onClick={() => setBase(m => addMonths(m, 1))}
@@ -50,6 +101,13 @@ export default function Calendar({ bookings, onDayClick, onBookingClick }: Props
           ›
         </button>
       </div>
+
+      {/* Hint text when selection is in progress */}
+      {selStart && (
+        <p className="text-center text-xs text-blue-500 pb-2 -mt-1">
+          Smelltu á síðasta dag dvalarinnar
+        </p>
+      )}
 
       {/* Colour legend */}
       <div className="flex flex-wrap gap-x-4 gap-y-1 px-4 pb-3">
@@ -61,15 +119,18 @@ export default function Calendar({ bookings, onDayClick, onBookingClick }: Props
         ))}
       </div>
 
-      {/* Two month grids — stacked on mobile, side-by-side on md+ */}
+      {/* Two month grids */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-0 md:gap-4 px-2 pb-4">
         {months.map((month, mi) => (
           <MonthGrid
             key={mi}
             month={month}
             bookings={bookings}
-            onDayClick={onDayClick}
-            onBookingClick={onBookingClick}
+            selStart={selStart}
+            previewStart={previewStart}
+            previewEnd={previewEnd}
+            onDayClick={handleDayClick}
+            onDayHover={handleDayHover}
           />
         ))}
       </div>
@@ -77,19 +138,22 @@ export default function Calendar({ bookings, onDayClick, onBookingClick }: Props
   )
 }
 
-function MonthGrid({ month, bookings, onDayClick, onBookingClick }: {
+function MonthGrid({ month, bookings, selStart, previewStart, previewEnd, onDayClick, onDayHover }: {
   month: Date
   bookings: Booking[]
-  onDayClick: (iso: string) => void
-  onBookingClick: (b: Booking) => void
+  selStart: string | null
+  previewStart: string | null
+  previewEnd: string | null
+  onDayClick: (iso: string, isCovered: boolean, booking?: Booking) => void
+  onDayHover: (iso: string) => void
 }) {
-  const days      = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) })
-  const firstDow  = (getDay(days[0]) + 6) % 7
-  const blanks    = Array(firstDow).fill(null)
+  const days       = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) })
+  const firstDow   = (getDay(days[0]) + 6) % 7
+  const blanks     = Array(firstDow).fill(null)
   const monthStart = startOfMonth(month)
   const monthEnd   = endOfMonth(month)
 
-  // Build a per-day coverage map: iso → { booking, isBookingStart, isBookingEnd }
+  // Build per-day booking coverage map
   type CoverInfo = { booking: Booking; isBookingStart: boolean; isBookingEnd: boolean }
   const coverage = new Map<string, CoverInfo>()
 
@@ -100,10 +164,9 @@ function MonthGrid({ month, bookings, onDayClick, onBookingClick }: {
   })
 
   for (const b of visible) {
-    const bs      = parseISO(b.start_date)
-    const be      = parseISO(b.end_date)
-    const bLastDay = new Date(be.getTime() - 86400000) // last occupied day
-
+    const bs       = parseISO(b.start_date)
+    const be       = parseISO(b.end_date)
+    const bLastDay = new Date(be.getTime() - 86400000)
     const coverStart = bs < monthStart ? monthStart : bs
     const coverEnd   = bLastDay > monthEnd ? monthEnd : bLastDay
 
@@ -122,14 +185,12 @@ function MonthGrid({ month, bookings, onDayClick, onBookingClick }: {
         {MONTH_IS[month.getMonth()]} {month.getFullYear()}
       </h2>
 
-      {/* Weekday headers */}
       <div className="grid grid-cols-7 mb-1">
         {WEEKDAYS.map(d => (
           <div key={d} className="text-center text-xs text-gray-400 font-medium py-1">{d}</div>
         ))}
       </div>
 
-      {/* Day cells */}
       <div className="grid grid-cols-7">
         {blanks.map((_, i) => <div key={`b${i}`} className="h-10" />)}
         {days.map(day => {
@@ -138,44 +199,72 @@ function MonthGrid({ month, bookings, onDayClick, onBookingClick }: {
           const cover = coverage.get(iso)
           const meta  = cover ? LABEL_META[cover.booking.label] : null
 
-          // Day-of-week: Mon=0 … Sun=6
-          const dow = (day.getDay() + 6) % 7
+          const dow = (day.getDay() + 6) % 7 // Mon=0 … Sun=6
 
-          // Visual segment edges: round at true booking start/end AND at week row boundaries
-          const visualFirst = !cover ? false : (cover.isBookingStart || dow === 0)
-          const visualLast  = !cover ? false : (cover.isBookingEnd   || dow === 6)
+          // Booking colour block
+          const visualFirst = cover ? (cover.isBookingStart || dow === 0) : false
+          const visualLast  = cover ? (cover.isBookingEnd   || dow === 6) : false
 
-          // Build border-radius string: only round the outer edges of the segment
-          let borderRadius = '0'
-          if (cover) {
-            const r = '9999px'
-            const tl = visualFirst ? r : '0'
-            const tr = visualLast  ? r : '0'
-            const br = visualLast  ? r : '0'
-            const bl = visualFirst ? r : '0'
-            borderRadius = `${tl} ${tr} ${br} ${bl}`
+          // Selection / preview highlight
+          const isSelStart  = iso === selStart
+          const inPreview   = previewStart && previewEnd && iso >= previewStart && iso <= previewEnd
+          const isPreviewFirst = inPreview && (iso === previewStart || dow === 0)
+          const isPreviewLast  = inPreview && (iso === previewEnd   || dow === 6)
+
+          // Decide what to render
+          const showBooking  = !!cover && !inPreview
+          const showPreview  = !!inPreview && !cover
+          const showSelStart = isSelStart && !cover
+
+          // Border radius helpers
+          function radius(left: boolean, right: boolean) {
+            const r = '9999px', s = '2px'
+            return `${left ? r : s} ${right ? r : s} ${right ? r : s} ${left ? r : s}`
           }
 
-          // Small horizontal margin at segment edges so bars don't touch card border
-          const ml = cover && visualFirst ? '2px' : '0'
-          const mr = cover && visualLast  ? '2px' : '0'
+          let bgClass = ''
+          let borderRadius = '0'
+          let ml = '0', mr = '0'
+
+          if (showBooking) {
+            bgClass = `${meta!.bg} opacity-90`
+            borderRadius = radius(visualFirst, visualLast)
+            if (visualFirst) ml = '2px'
+            if (visualLast)  mr = '2px'
+          } else if (showPreview || showSelStart) {
+            bgClass = 'bg-blue-200'
+            borderRadius = radius(!!isPreviewFirst || isSelStart, !!isPreviewLast || isSelStart)
+            if (isPreviewFirst || isSelStart) ml = '2px'
+            if (isPreviewLast  || isSelStart) mr = '2px'
+          }
+
+          const textColor = showBooking
+            ? 'text-white'
+            : showPreview || showSelStart
+              ? 'text-blue-800 font-semibold'
+              : today
+                ? 'text-blue-600 font-bold'
+                : 'text-gray-700'
 
           return (
             <button
               key={iso}
-              onClick={() => cover ? onBookingClick(cover.booking) : onDayClick(iso)}
-              className={`h-10 flex items-center justify-center text-sm font-medium transition-colors
-                ${cover
-                  ? `${meta!.bg} opacity-90 ${today ? 'ring-2 ring-white ring-inset' : ''}`
-                  : `hover:bg-gray-100 active:bg-gray-200 ${today ? 'text-blue-600 font-bold' : 'text-gray-700'}`
-                }
+              onClick={() => onDayClick(iso, !!cover, cover?.booking)}
+              onMouseEnter={() => onDayHover(iso)}
+              className={`h-10 flex items-center justify-center text-sm transition-colors
+                ${bgClass}
+                ${!showBooking && !showPreview && !showSelStart ? 'hover:bg-gray-100 active:bg-gray-200' : ''}
+                ${today && showBooking ? 'ring-2 ring-white ring-inset' : ''}
               `}
-              style={{ borderRadius, marginLeft: ml, marginRight: mr, width: cover ? `calc(100% - ${ml} - ${mr})` : undefined }}
+              style={{
+                borderRadius,
+                marginLeft:  ml,
+                marginRight: mr,
+                width: (showBooking || showPreview || showSelStart) ? `calc(100% - ${ml} - ${mr})` : undefined,
+              }}
               title={cover ? meta!.display : undefined}
             >
-              <span className={cover ? 'text-white' : ''}>
-                {day.getDate()}
-              </span>
+              <span className={textColor}>{day.getDate()}</span>
             </button>
           )
         })}

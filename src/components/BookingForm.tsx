@@ -5,7 +5,8 @@ import { useAuth } from '../lib/auth'
 import { createBooking, updateBooking } from '../lib/bookings'
 
 interface Props {
-  initialDate?: string       // pre-fill start date when clicking a calendar day
+  initialDate?: string       // pre-fill start date
+  initialEndDate?: string    // pre-fill end date (from two-tap calendar selection)
   editing?: Booking          // if set, we're editing an existing booking
   bookings: Booking[]
   onSaved: (b: Booking, isNew: boolean) => void
@@ -14,13 +15,13 @@ interface Props {
 
 const LABELS: Label[] = ['svenni_inga', 'freyr_soley', 'saman', 'adrir_gestir']
 
-export default function BookingForm({ initialDate, editing, bookings, onSaved, onClose }: Props) {
+export default function BookingForm({ initialDate, initialEndDate, editing, bookings, onSaved, onClose }: Props) {
   const { member } = useAuth()
 
   const defaultLabel = member ? COUPLE_DEFAULT_LABEL[member.couple] : 'svenni_inga'
 
   const [startDate, setStartDate] = useState(editing?.start_date ?? initialDate ?? '')
-  const [endDate,   setEndDate]   = useState(editing?.end_date   ?? '')
+  const [endDate,   setEndDate]   = useState(editing?.end_date   ?? initialEndDate ?? '')
   const [label,     setLabel]     = useState<Label>(editing?.label ?? defaultLabel)
   const [notes,     setNotes]     = useState(editing?.notes ?? '')
   const [error,     setError]     = useState('')

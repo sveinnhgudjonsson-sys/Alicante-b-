@@ -14,6 +14,7 @@ export default function HomeScreen() {
   const [showForm, setShowForm]       = useState(false)
   const [editingBooking, setEditing]  = useState<Booking | undefined>()
   const [prefillDate, setPrefillDate] = useState<string | undefined>()
+  const [prefillEnd,  setPrefillEnd]  = useState<string | undefined>()
 
   useEffect(() => {
     load()
@@ -27,12 +28,21 @@ export default function HomeScreen() {
   function openNew(date?: string) {
     setEditing(undefined)
     setPrefillDate(date)
+    setPrefillEnd(undefined)
+    setShowForm(true)
+  }
+
+  function openNewRange(start: string, end: string) {
+    setEditing(undefined)
+    setPrefillDate(start)
+    setPrefillEnd(end)
     setShowForm(true)
   }
 
   function openEdit(b: Booking) {
     setEditing(b)
     setPrefillDate(undefined)
+    setPrefillEnd(undefined)
     setShowForm(true)
   }
 
@@ -81,7 +91,7 @@ export default function HomeScreen() {
         <div className="bg-white mt-3 rounded-2xl shadow-sm mx-2 md:mx-0">
           <Calendar
             bookings={bookings}
-            onDayClick={iso => openNew(iso)}
+            onRangeSelect={(start, end) => openNewRange(start, end)}
             onBookingClick={b => openEdit(b)}
           />
         </div>
@@ -112,6 +122,7 @@ export default function HomeScreen() {
       {showForm && (
         <BookingForm
           initialDate={prefillDate}
+          initialEndDate={prefillEnd}
           editing={editingBooking}
           bookings={bookings}
           onSaved={handleSaved}
