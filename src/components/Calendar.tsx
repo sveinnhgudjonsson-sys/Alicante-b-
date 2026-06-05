@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import {
   startOfMonth, endOfMonth, eachDayOfInterval,
-  getDay, addMonths, subMonths, isSameMonth,
-  isWithinInterval, parseISO, isSameDay
+  getDay, addMonths, subMonths, parseISO
 } from 'date-fns'
 import { Booking, LABEL_META } from '../types'
 import { WEEKDAYS, toISO } from '../lib/dates'
@@ -132,8 +131,7 @@ function MonthGrid({ month, bookings, onDayClick, onBookingClick }: {
               booking={b}
               month={month}
               blanks={firstDow}
-              totalDays={days.length}
-              onBookingClick={onBookingClick}
+                onBookingClick={onBookingClick}
             />
           ))}
         </div>
@@ -142,11 +140,10 @@ function MonthGrid({ month, bookings, onDayClick, onBookingClick }: {
   )
 }
 
-function BookingBar({ booking, month, blanks, totalDays, onBookingClick }: {
+function BookingBar({ booking, month, blanks, onBookingClick }: {
   booking: Booking
   month: Date
   blanks: number
-  totalDays: number
   onBookingClick: (b: Booking) => void
 }) {
   const monthStart = startOfMonth(month)
