@@ -160,7 +160,7 @@ export default function BookingForm({ initialDate, editing, bookings, onSaved, o
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={2}
-              placeholder="T.d. koma kl. 18, koma með hundinn…"
+              placeholder="T.d. taka auka lykla, mæta kl. 23…"
               className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
             />
           </div>
