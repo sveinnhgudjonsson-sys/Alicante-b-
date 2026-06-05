@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   startOfMonth, endOfMonth, eachDayOfInterval,
-  getDay, addMonths, subMonths, parseISO
+  getDay, addMonths, subMonths, parseISO, isSameDay
 } from 'date-fns'
 import { Booking, LABEL_META, Label } from '../types'
 import { WEEKDAYS, toISO } from '../lib/dates'
@@ -83,20 +83,38 @@ function MonthGrid({ month, bookings, onDayClick, onBookingClick }: {
   onDayClick: (iso: string) => void
   onBookingClick: (b: Booking) => void
 }) {
-  const days = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) })
-
-  // Monday=0 offset: getDay() returns Sun=0..Sat=6, convert to Mon=0..Sun=6
-  const firstDow = (getDay(days[0]) + 6) % 7
-  const blanks = Array(firstDow).fill(null)
-
+  const days      = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) })
+  const firstDow  = (getDay(days[0]) + 6) % 7
+  const blanks    = Array(firstDow).fill(null)
   const monthStart = startOfMonth(month)
   const monthEnd   = endOfMonth(month)
+
+  // Build a per-day coverage map: iso → { booking, isBookingStart, isBookingEnd }
+  type CoverInfo = { booking: Booking; isBookingStart: boolean; isBookingEnd: boolean }
+  const coverage = new Map<string, CoverInfo>()
 
   const visible = bookings.filter(b => {
     const bs = parseISO(b.start_date)
     const be = parseISO(b.end_date)
     return bs <= monthEnd && be > monthStart
   })
+
+  for (const b of visible) {
+    const bs      = parseISO(b.start_date)
+    const be      = parseISO(b.end_date)
+    const bLastDay = new Date(be.getTime() - 86400000) // last occupied day
+
+    const coverStart = bs < monthStart ? monthStart : bs
+    const coverEnd   = bLastDay > monthEnd ? monthEnd : bLastDay
+
+    eachDayOfInterval({ start: coverStart, end: coverEnd }).forEach(day => {
+      coverage.set(toISO(day), {
+        booking: b,
+        isBookingStart: isSameDay(day, bs),
+        isBookingEnd:   isSameDay(day, bLastDay),
+      })
+    })
+  }
 
   return (
     <div className="md:border md:border-gray-100 md:rounded-xl md:p-2">
@@ -111,129 +129,57 @@ function MonthGrid({ month, bookings, onDayClick, onBookingClick }: {
         ))}
       </div>
 
-      {/* Day cells + booking bars overlay */}
-      <div className="relative">
-        <div className="grid grid-cols-7">
-          {blanks.map((_, i) => <div key={`b${i}`} className="h-10" />)}
-          {days.map(day => {
-            const iso = toISO(day)
-            const today = toISO(new Date()) === iso
-            return (
-              <button
-                key={iso}
-                onClick={() => onDayClick(iso)}
-                className={`h-10 flex items-start justify-center pt-1 text-sm relative z-10
-                  ${today ? 'font-bold text-blue-600' : 'text-gray-700'}
-                  hover:bg-gray-100 rounded active:bg-gray-200`}
-              >
-                {day.getDate()}
-              </button>
-            )
-          })}
-        </div>
+      {/* Day cells */}
+      <div className="grid grid-cols-7">
+        {blanks.map((_, i) => <div key={`b${i}`} className="h-10" />)}
+        {days.map(day => {
+          const iso   = toISO(day)
+          const today = toISO(new Date()) === iso
+          const cover = coverage.get(iso)
+          const meta  = cover ? LABEL_META[cover.booking.label] : null
 
-        {/* Booking bars */}
-        <div className="absolute inset-0 pointer-events-none">
-          {visible.map(b => (
-            <BookingBar
-              key={b.id}
-              booking={b}
-              month={month}
-              blanks={firstDow}
-              onBookingClick={onBookingClick}
-            />
-          ))}
-        </div>
+          // Day-of-week: Mon=0 … Sun=6
+          const dow = (day.getDay() + 6) % 7
+
+          // Visual segment edges: round at true booking start/end AND at week row boundaries
+          const visualFirst = !cover ? false : (cover.isBookingStart || dow === 0)
+          const visualLast  = !cover ? false : (cover.isBookingEnd   || dow === 6)
+
+          // Build border-radius string: only round the outer edges of the segment
+          let borderRadius = '0'
+          if (cover) {
+            const r = '9999px'
+            const tl = visualFirst ? r : '0'
+            const tr = visualLast  ? r : '0'
+            const br = visualLast  ? r : '0'
+            const bl = visualFirst ? r : '0'
+            borderRadius = `${tl} ${tr} ${br} ${bl}`
+          }
+
+          // Small horizontal margin at segment edges so bars don't touch card border
+          const ml = cover && visualFirst ? '2px' : '0'
+          const mr = cover && visualLast  ? '2px' : '0'
+
+          return (
+            <button
+              key={iso}
+              onClick={() => cover ? onBookingClick(cover.booking) : onDayClick(iso)}
+              className={`h-10 flex items-center justify-center text-sm font-medium transition-colors
+                ${cover
+                  ? `${meta!.bg} opacity-90 ${today ? 'ring-2 ring-white ring-inset' : ''}`
+                  : `hover:bg-gray-100 active:bg-gray-200 ${today ? 'text-blue-600 font-bold' : 'text-gray-700'}`
+                }
+              `}
+              style={{ borderRadius, marginLeft: ml, marginRight: mr, width: cover ? `calc(100% - ${ml} - ${mr})` : undefined }}
+              title={cover ? meta!.display : undefined}
+            >
+              <span className={cover ? 'text-white' : ''}>
+                {day.getDate()}
+              </span>
+            </button>
+          )
+        })}
       </div>
     </div>
-  )
-}
-
-function BookingBar({ booking, month, blanks, onBookingClick }: {
-  booking: Booking
-  month: Date
-  blanks: number
-  onBookingClick: (b: Booking) => void
-}) {
-  const monthStart = startOfMonth(month)
-  const monthEnd   = endOfMonth(month)
-
-  const bs = parseISO(booking.start_date)
-  const be = parseISO(booking.end_date) // exclusive
-
-  // True start/end relative to this month
-  const isRealStart = bs >= monthStart
-  const isRealEnd   = new Date(be.getTime() - 86400000) <= monthEnd
-
-  const visStart = bs < monthStart ? monthStart : bs
-  const lastDay  = new Date(be.getTime() - 86400000)
-  const visEnd   = lastDay > monthEnd ? monthEnd : lastDay
-
-  const startDay = visStart.getDate()
-  const endDay   = visEnd.getDate()
-
-  const startCell = blanks + startDay - 1
-  const endCell   = blanks + endDay - 1
-
-  const COLS = 7
-  const meta = LABEL_META[booking.label]
-
-  // Split across rows
-  const bars: { startCol: number; endCol: number; row: number; segIndex: number }[] = []
-  let cursor = startCell
-  let segIndex = 0
-  while (cursor <= endCell) {
-    const row    = Math.floor(cursor / COLS)
-    const rowEnd = Math.min(endCell, (row + 1) * COLS - 1)
-    bars.push({ startCol: cursor % COLS, endCol: rowEnd % COLS, row, segIndex })
-    cursor = rowEnd + 1
-    segIndex++
-  }
-
-  const totalSegs = bars.length
-
-  return (
-    <>
-      {bars.map((bar) => {
-        const isFirstSeg = bar.segIndex === 0
-        const isLastSeg  = bar.segIndex === totalSegs - 1
-
-        // Round only the true start/end edges of the booking
-        const roundLeft  = isFirstSeg && isRealStart
-        const roundRight = isLastSeg  && isRealEnd
-
-        // Inset the bar slightly from cell edges so it doesn't bleed to card border
-        // Left inset: only on first col of a row if not rounded; right inset: only on last col of row if not rounded
-        const leftInset  = bar.startCol === 0 && !roundLeft  ? '2px' : '0px'
-        const rightInset = bar.endCol   === 6 && !roundRight ? '2px' : '0px'
-
-        const leftPct  = `calc(${(bar.startCol / 7) * 100}% + ${leftInset})`
-        const widthPct = `calc(${((bar.endCol - bar.startCol + 1) / 7) * 100}% - ${leftInset} - ${rightInset})`
-        const top      = `${bar.row * 40 + 22}px`
-
-        return (
-          <button
-            key={bar.segIndex}
-            onClick={() => onBookingClick(booking)}
-            className={`absolute h-5 pointer-events-auto flex items-center overflow-hidden z-20 ${meta.bg} opacity-90`}
-            style={{
-              left: leftPct,
-              width: widthPct,
-              top,
-              borderRadius: `${roundLeft ? '9999px' : '2px'} ${roundRight ? '9999px' : '2px'} ${roundRight ? '9999px' : '2px'} ${roundLeft ? '9999px' : '2px'}`,
-              paddingLeft:  roundLeft  ? '8px' : '4px',
-              paddingRight: roundRight ? '8px' : '4px',
-            }}
-            title={meta.display}
-          >
-            {isFirstSeg && (
-              <span className="text-white text-xs font-medium truncate leading-none">
-                {meta.display}
-              </span>
-            )}
-          </button>
-        )
-      })}
-    </>
   )
 }
