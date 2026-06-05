@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase'
 import Calendar from '../components/Calendar'
 import UpcomingList from '../components/UpcomingList'
 import BookingForm from '../components/BookingForm'
+import CalSubscribePanel from '../components/CalSubscribePanel'
 
 export default function HomeScreen() {
   const { member } = useAuth()
@@ -15,6 +16,7 @@ export default function HomeScreen() {
   const [editingBooking, setEditing]  = useState<Booking | undefined>()
   const [prefillDate, setPrefillDate] = useState<string | undefined>()
   const [prefillEnd,  setPrefillEnd]  = useState<string | undefined>()
+  const [showSubscribe, setShowSubscribe] = useState(false)
 
   useEffect(() => {
     load()
@@ -76,6 +78,19 @@ export default function HomeScreen() {
               + Ný bókun
             </button>
             <span className="text-sm text-gray-400 hidden sm:inline">{member?.display_name}</span>
+            {/* Calendar subscribe button */}
+            <div className="relative">
+              <button
+                onClick={() => setShowSubscribe(v => !v)}
+                className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded border border-gray-200 whitespace-nowrap"
+                title="Áskrift að dagatali"
+              >
+                📅
+              </button>
+              {showSubscribe && (
+                <CalSubscribePanel onClose={() => setShowSubscribe(false)} />
+              )}
+            </div>
             <button
               onClick={handleSignOut}
               className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded border border-gray-200"
