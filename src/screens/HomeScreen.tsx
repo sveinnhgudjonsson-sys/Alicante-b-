@@ -56,10 +56,16 @@ export default function HomeScreen() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-100 safe-top">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-lg font-bold text-gray-800">Alicante íbúð</h1>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-500">{member?.display_name}</span>
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+          <h1 className="text-lg font-bold text-gray-800 flex-shrink-0">Alicante íbúð</h1>
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={() => openNew()}
+              className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-semibold px-4 py-1.5 rounded-full transition"
+            >
+              + Ný bókun
+            </button>
+            <span className="text-sm text-gray-400 hidden sm:inline">{member?.display_name}</span>
             <button
               onClick={handleSignOut}
               className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded border border-gray-200"
@@ -70,9 +76,9 @@ export default function HomeScreen() {
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto pb-24">
+      <main className="max-w-2xl mx-auto pb-24">
         {/* Calendar */}
-        <div className="bg-white mt-3 rounded-2xl shadow-sm mx-2">
+        <div className="bg-white mt-3 rounded-2xl shadow-sm mx-2 md:mx-0">
           <Calendar
             bookings={bookings}
             onDayClick={iso => openNew(iso)}
@@ -81,7 +87,7 @@ export default function HomeScreen() {
         </div>
 
         {/* Upcoming bookings */}
-        <div className="bg-white mt-3 rounded-2xl shadow-sm mx-2">
+        <div className="bg-white mt-3 rounded-2xl shadow-sm mx-2 md:mx-0">
           <div className="px-4 pt-4 pb-2">
             <h2 className="font-semibold text-gray-700">Komandi bókanir</h2>
           </div>

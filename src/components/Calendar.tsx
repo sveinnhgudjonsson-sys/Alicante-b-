@@ -3,13 +3,15 @@ import {
   startOfMonth, endOfMonth, eachDayOfInterval,
   getDay, addMonths, subMonths, parseISO
 } from 'date-fns'
-import { Booking, LABEL_META } from '../types'
+import { Booking, LABEL_META, Label } from '../types'
 import { WEEKDAYS, toISO } from '../lib/dates'
 
 const MONTH_IS = [
   'Janúar','Febrúar','Mars','Apríl','Maí','Júní',
   'Júlí','Ágúst','September','Október','Nóvember','Desember'
 ]
+
+const LEGEND_LABELS: Label[] = ['svenni_inga', 'freyr_soley', 'saman', 'adrir_gestir']
 
 interface Props {
   bookings: Booking[]
@@ -29,10 +31,10 @@ export default function Calendar({ bookings, onDayClick, onBookingClick }: Props
   return (
     <div>
       {/* Navigation */}
-      <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex items-center justify-between px-4 pt-3 pb-2">
         <button
           onClick={() => setBase(m => subMonths(m, 1))}
-          className="p-2 rounded-full hover:bg-gray-100 active:bg-gray-200 text-gray-600"
+          className="p-2 rounded-full hover:bg-gray-100 active:bg-gray-200 text-gray-600 text-xl leading-none"
           aria-label="Fyrri mánuður"
         >
           ‹
@@ -42,15 +44,25 @@ export default function Calendar({ bookings, onDayClick, onBookingClick }: Props
         </span>
         <button
           onClick={() => setBase(m => addMonths(m, 1))}
-          className="p-2 rounded-full hover:bg-gray-100 active:bg-gray-200 text-gray-600"
+          className="p-2 rounded-full hover:bg-gray-100 active:bg-gray-200 text-gray-600 text-xl leading-none"
           aria-label="Næsti mánuður"
         >
           ›
         </button>
       </div>
 
-      {/* Two month grids */}
-      <div className="space-y-6 px-2 pb-4">
+      {/* Colour legend */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1 px-4 pb-3">
+        {LEGEND_LABELS.map(l => (
+          <div key={l} className="flex items-center gap-1.5">
+            <span className={`w-3 h-3 rounded-sm flex-shrink-0 ${LABEL_META[l].bg}`} />
+            <span className="text-xs text-gray-500">{LABEL_META[l].display}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Two month grids — stacked on mobile, side-by-side on md+ */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-0 md:gap-4 px-2 pb-4">
         {months.map((month, mi) => (
           <MonthGrid
             key={mi}
@@ -77,19 +89,17 @@ function MonthGrid({ month, bookings, onDayClick, onBookingClick }: {
   const firstDow = (getDay(days[0]) + 6) % 7
   const blanks = Array(firstDow).fill(null)
 
-  // Which bookings are visible this month?
   const monthStart = startOfMonth(month)
   const monthEnd   = endOfMonth(month)
 
   const visible = bookings.filter(b => {
     const bs = parseISO(b.start_date)
     const be = parseISO(b.end_date)
-    // half-open: booking covers [start, end), so it overlaps the month if start < monthEnd+1 and end > monthStart
     return bs <= monthEnd && be > monthStart
   })
 
   return (
-    <div>
+    <div className="md:border md:border-gray-100 md:rounded-xl md:p-2">
       <h2 className="text-center font-semibold text-gray-700 mb-2">
         {MONTH_IS[month.getMonth()]} {month.getFullYear()}
       </h2>
@@ -103,7 +113,6 @@ function MonthGrid({ month, bookings, onDayClick, onBookingClick }: {
 
       {/* Day cells + booking bars overlay */}
       <div className="relative">
-        {/* Day number grid */}
         <div className="grid grid-cols-7">
           {blanks.map((_, i) => <div key={`b${i}`} className="h-10" />)}
           {days.map(day => {
@@ -123,7 +132,7 @@ function MonthGrid({ month, bookings, onDayClick, onBookingClick }: {
           })}
         </div>
 
-        {/* Booking bars — rendered on top */}
+        {/* Booking bars */}
         <div className="absolute inset-0 pointer-events-none">
           {visible.map(b => (
             <BookingBar
@@ -131,7 +140,7 @@ function MonthGrid({ month, bookings, onDayClick, onBookingClick }: {
               booking={b}
               month={month}
               blanks={firstDow}
-                onBookingClick={onBookingClick}
+              onBookingClick={onBookingClick}
             />
           ))}
         </div>
@@ -152,56 +161,74 @@ function BookingBar({ booking, month, blanks, onBookingClick }: {
   const bs = parseISO(booking.start_date)
   const be = parseISO(booking.end_date) // exclusive
 
-  // Clamp to the visible month
+  // True start/end relative to this month
+  const isRealStart = bs >= monthStart
+  const isRealEnd   = new Date(be.getTime() - 86400000) <= monthEnd
+
   const visStart = bs < monthStart ? monthStart : bs
-  // end_date is exclusive, last visible day is be - 1; but we don't draw on end_date cell
-  const lastDay  = new Date(be.getTime() - 86400000) // be - 1 day
+  const lastDay  = new Date(be.getTime() - 86400000)
   const visEnd   = lastDay > monthEnd ? monthEnd : lastDay
 
   const startDay = visStart.getDate()
   const endDay   = visEnd.getDate()
 
-  // Cell index (0-based) in the grid
   const startCell = blanks + startDay - 1
   const endCell   = blanks + endDay - 1
 
   const COLS = 7
   const meta = LABEL_META[booking.label]
 
-  // We may need to split the bar across rows
-  const bars: { startCol: number; endCol: number; row: number }[] = []
+  // Split across rows
+  const bars: { startCol: number; endCol: number; row: number; segIndex: number }[] = []
   let cursor = startCell
+  let segIndex = 0
   while (cursor <= endCell) {
-    const row = Math.floor(cursor / COLS)
+    const row    = Math.floor(cursor / COLS)
     const rowEnd = Math.min(endCell, (row + 1) * COLS - 1)
-    bars.push({ startCol: cursor % COLS, endCol: rowEnd % COLS, row })
+    bars.push({ startCol: cursor % COLS, endCol: rowEnd % COLS, row, segIndex })
     cursor = rowEnd + 1
+    segIndex++
   }
+
+  const totalSegs = bars.length
 
   return (
     <>
-      {bars.map((bar, i) => {
-        const isFirst = i === 0
-        const isLast  = i === bars.length - 1
-        const left   = `${(bar.startCol / 7) * 100}%`
-        const width  = `${((bar.endCol - bar.startCol + 1) / 7) * 100}%`
-        const top    = `${bar.row * 40 + 22}px` // 40px row height, 22px down from top
+      {bars.map((bar) => {
+        const isFirstSeg = bar.segIndex === 0
+        const isLastSeg  = bar.segIndex === totalSegs - 1
+
+        // Round only the true start/end edges of the booking
+        const roundLeft  = isFirstSeg && isRealStart
+        const roundRight = isLastSeg  && isRealEnd
+
+        // Inset the bar slightly from cell edges so it doesn't bleed to card border
+        // Left inset: only on first col of a row if not rounded; right inset: only on last col of row if not rounded
+        const leftInset  = bar.startCol === 0 && !roundLeft  ? '2px' : '0px'
+        const rightInset = bar.endCol   === 6 && !roundRight ? '2px' : '0px'
+
+        const leftPct  = `calc(${(bar.startCol / 7) * 100}% + ${leftInset})`
+        const widthPct = `calc(${((bar.endCol - bar.startCol + 1) / 7) * 100}% - ${leftInset} - ${rightInset})`
+        const top      = `${bar.row * 40 + 22}px`
 
         return (
           <button
-            key={i}
+            key={bar.segIndex}
             onClick={() => onBookingClick(booking)}
-            className={`absolute h-5 pointer-events-auto flex items-center overflow-hidden z-20
-              ${meta.bg} opacity-90
-              ${isFirst ? 'rounded-l-full pl-2' : 'pl-1'}
-              ${isLast  ? 'rounded-r-full pr-2' : 'pr-1'}
-            `}
-            style={{ left, width, top }}
-            title={LABEL_META[booking.label].display}
+            className={`absolute h-5 pointer-events-auto flex items-center overflow-hidden z-20 ${meta.bg} opacity-90`}
+            style={{
+              left: leftPct,
+              width: widthPct,
+              top,
+              borderRadius: `${roundLeft ? '9999px' : '2px'} ${roundRight ? '9999px' : '2px'} ${roundRight ? '9999px' : '2px'} ${roundLeft ? '9999px' : '2px'}`,
+              paddingLeft:  roundLeft  ? '8px' : '4px',
+              paddingRight: roundRight ? '8px' : '4px',
+            }}
+            title={meta.display}
           >
-            {isFirst && (
+            {isFirstSeg && (
               <span className="text-white text-xs font-medium truncate leading-none">
-                {LABEL_META[booking.label].display}
+                {meta.display}
               </span>
             )}
           </button>
