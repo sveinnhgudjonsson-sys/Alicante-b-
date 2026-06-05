@@ -1,8 +1,8 @@
 import { useState } from 'react'
 
 const TOKEN   = import.meta.env.VITE_ICAL_TOKEN as string
-const BASE    = 'https://alicante-b.vercel.app'
-const FEED    = `${BASE}/api/ical?token=${TOKEN}`
+const BASE    = 'https://hbswleiwpiycnznzpyee.supabase.co/functions/v1'
+const FEED    = `${BASE}/ical?token=${TOKEN}`
 const WEBCAL  = FEED.replace('https://', 'webcal://')
 const GOOGLE  = `https://calendar.google.com/calendar/r/settings/addbyurl?url=${encodeURIComponent(FEED)}`
 
